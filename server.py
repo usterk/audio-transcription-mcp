@@ -12,8 +12,12 @@
 Audio Transcription MCP Server
 
 Single tool: `transcribe` — handles YouTube URLs, remote URLs,
-local audio/video files. Two backends: Groq (cloud, default)
-and whisperx-mlx (local, with optional speaker diarization).
+local audio/video files. Three backends:
+- groq: Cloud Whisper API (fast, default)
+- local: whisper.cpp with Metal GPU (fast local, no diarization)
+- local-diarize: whisperx with PyAnnote (slower, speaker diarization)
+
+Dependencies install automatically on first use.
 """
 
 import asyncio
@@ -33,13 +37,17 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.source_resolver import resolve_source
 from core.groq_backend import transcribe_groq
-from core.local_backend import transcribe_local
+from core.local_backend import transcribe_whisper_cpp, transcribe_whisperx
 from core.formatter import save_output
+
+VALID_BACKENDS = ("groq", "local", "local-diarize")
 
 mcp = FastMCP(
     "audio-transcription",
     instructions="Transcribe audio/video from local files, YouTube, or URLs. "
-    "Supports Groq Whisper (cloud) and whisperx-mlx (local with diarization).",
+    "Three backends: groq (cloud, fast, default), local (whisper.cpp, GPU Metal), "
+    "local-diarize (whisperx, speaker identification). "
+    "Dependencies auto-install on first use. First run may take several minutes.",
 )
 
 
@@ -48,7 +56,6 @@ async def transcribe(
     source: str,
     backend: str = "groq",
     language: str = "",
-    diarize: bool = False,
     model: str = "",
     output_dir: str = "",
     ctx: Context = None,
@@ -57,17 +64,19 @@ async def transcribe(
 
     Args:
         source: Absolute path to audio/video file, YouTube URL, or URL to audio file.
-        backend: "groq" (cloud, default) or "local" (whisperx-mlx on Apple Silicon).
+        backend: "groq" (cloud, fast, default), "local" (whisper.cpp, GPU Metal, fast),
+                 or "local-diarize" (whisperx, speaker identification, slower).
         language: ISO-639-1 language code (e.g., "pl", "en"). Empty = auto-detect.
-        diarize: Enable speaker diarization. Only works with backend="local".
-        model: Whisper model. Groq: "whisper-large-v3-turbo" (default), "whisper-large-v3",
-               "distil-whisper-english". Local: "large-v3" (default), "base", "small".
+        model: Whisper model override. Groq default: "whisper-large-v3-turbo".
+               Local default: "base" (fast) — options: base, small, medium, large-v3, large-v3-turbo.
+               Local-diarize default: "large-v3".
         output_dir: REQUIRED for URLs. Directory for output files. For local files defaults
                to same directory as source. For YouTube/remote URLs you MUST provide this -
                use the current working directory of the project.
 
     Returns:
         Dict with json_path, txt_path, summary (duration, language, segments count).
+        First run with local/local-diarize backends may take extra time for dependency installation.
     """
     async def log(msg: str):
         if ctx:
@@ -77,20 +86,17 @@ async def transcribe(
         if ctx:
             await ctx.report_progress(step, total, msg)
 
-    # Validate backend
-    if backend not in ("groq", "local"):
-        return {"error": f"Unknown backend: {backend}. Use 'groq' or 'local'."}
+    if backend not in VALID_BACKENDS:
+        return {"error": f"Unknown backend: {backend}. Use: {', '.join(VALID_BACKENDS)}"}
 
-    if diarize and backend != "local":
-        return {"error": "Diarization requires backend='local'. Groq does not support speaker diarization."}
-
-    force_audio = backend == "local"
+    # For local backends, always download audio (skip YouTube transcript fast path)
+    force_audio = backend in ("local", "local-diarize")
     lang = language.strip() if language else None
     languages = [lang] if lang else None
 
     with tempfile.TemporaryDirectory(prefix="mcp_transcribe_") as temp_dir:
         # Step 1: Resolve source
-        await progress(1, 4, "Resolving source...")
+        await progress(1, 5, "Resolving source...")
         await log(f"Resolving source: {source}")
         try:
             resolved = await asyncio.to_thread(
@@ -106,11 +112,12 @@ async def transcribe(
         await log(f"Source type: {resolved.source_type}")
 
         # Step 2: Transcribe
-        await progress(2, 4, "Transcribing audio...")
+        await progress(2, 5, "Transcribing audio...")
         try:
             if resolved.source_type == "youtube_transcript":
                 await log("Using YouTube transcript API (fast path)")
                 result = resolved.transcript_data
+
             elif backend == "groq":
                 api_key = os.getenv("GROQ_API_KEY")
                 if not api_key:
@@ -124,36 +131,53 @@ async def transcribe(
                     language=lang,
                     model=groq_model,
                 )
-                result["backend"] = "groq"
+
             elif backend == "local":
-                local_model = model or "large-v3"
-                hf_token = os.getenv("HF_TOKEN")
-                await log(f"Transcribing locally ({local_model}, diarize={diarize})...")
+                local_model = model or "base"
+                await log(f"Transcribing with whisper.cpp ({local_model})...")
+                await log("Installing dependencies if needed (first run may take a few minutes)...")
                 result = await asyncio.to_thread(
-                    transcribe_local,
+                    transcribe_whisper_cpp,
                     resolved.audio_path,
                     language=lang,
                     model=local_model,
-                    diarize=diarize,
+                )
+
+            elif backend == "local-diarize":
+                wx_model = model or "large-v3"
+                hf_token = os.getenv("HF_TOKEN")
+                if not hf_token:
+                    return {
+                        "error": "HF_TOKEN not set. Required for speaker diarization. "
+                        "Get token at https://huggingface.co/settings/tokens and add to .env file."
+                    }
+                await log(f"Transcribing with whisperx ({wx_model}) + diarization...")
+                await log("Installing dependencies if needed (first run may take several minutes)...")
+                result = await asyncio.to_thread(
+                    transcribe_whisperx,
+                    resolved.audio_path,
+                    language=lang,
+                    model=wx_model,
                     hf_token=hf_token,
                 )
-                result["backend"] = "local"
+
             else:
                 return {"error": f"Unknown backend: {backend}"}
+
         except Exception as e:
             return {"error": f"Transcription failed: {e}"}
 
         await log(f"Transcription complete: {len(result.get('segments', []))} segments")
 
         # Step 3: Save output files
-        await progress(3, 4, "Saving output files...")
+        await progress(3, 5, "Saving output files...")
         try:
             metadata = {
                 "source": resolved.original_source or source,
                 "source_type": resolved.source_type,
                 "backend": result.get("backend", backend),
                 "model": result.get("model", model),
-                "diarize": diarize,
+                "diarize": backend == "local-diarize",
             }
 
             paths = await asyncio.to_thread(
@@ -167,7 +191,7 @@ async def transcribe(
             return {"error": f"Failed to save output: {e}"}
 
         # Step 4: Return summary
-        await progress(4, 4, "Done!")
+        await progress(5, 5, "Done!")
         segments = result.get("segments", [])
         duration = result.get("duration", 0)
         detected_lang = result.get("language", "")
