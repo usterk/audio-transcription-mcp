@@ -1,0 +1,42 @@
+{
+  "source": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+  "source_type": "youtube_transcript",
+  "backend": "youtube_api",
+  "model": "",
+  "diarize": false,
+  "language": "en",
+  "duration": 0,
+  "segments": [
+    {
+      "start": 1.2,
+      "end": 3.3600000000000003,
+      "text": "All right, so here we are, in front of the\nelephants"
+    },
+    {
+      "start": 5.318,
+      "end": 7.974,
+      "text": "the cool thing about these guys is that they\nhave really..."
+    },
+    {
+      "start": 7.974,
+      "end": 12.616,
+      "text": "really really long trunks"
+    },
+    {
+      "start": 12.616,
+      "end": 14.366999999999999,
+      "text": "and that's cool"
+    },
+    {
+      "start": 14.421,
+      "end": 15.732999999999999,
+      "text": "(baaaaaaaaaaahhh!!)"
+    },
+    {
+      "start": 16.881,
+      "end": 18.881,
+      "text": "and that's pretty much all there is to\nsay"
+    }
+  ],
+  "full_text": "All right, so here we are, in front of the\nelephants the cool thing about these guys is that they\nhave really... really really long trunks and that's cool (baaaaaaaaaaahhh!!) and that's pretty much all there is to\nsay"
+}

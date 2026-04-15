@@ -62,7 +62,9 @@ async def transcribe(
         diarize: Enable speaker diarization. Only works with backend="local".
         model: Whisper model. Groq: "whisper-large-v3-turbo" (default), "whisper-large-v3",
                "distil-whisper-english". Local: "large-v3" (default), "base", "small".
-        output_dir: Directory for output files. Default: same directory as source file.
+        output_dir: REQUIRED for URLs. Directory for output files. For local files defaults
+               to same directory as source. For YouTube/remote URLs you MUST provide this -
+               use the current working directory of the project.
 
     Returns:
         Dict with json_path, txt_path, summary (duration, language, segments count).

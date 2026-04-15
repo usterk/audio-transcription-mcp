@@ -101,7 +101,10 @@ def save_output(
     elif os.path.exists(source):
         out_dir = Path(source).parent
     else:
-        out_dir = Path.cwd()
+        raise ValueError(
+            f"output_dir is required for non-local sources (URLs). "
+            f"Source: {source}"
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
