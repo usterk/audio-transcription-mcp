@@ -44,10 +44,17 @@ VALID_BACKENDS = ("groq", "local", "local-diarize")
 
 mcp = FastMCP(
     "audio-transcription",
-    instructions="Transcribe audio/video from local files, YouTube, or URLs. "
-    "Three backends: groq (cloud, fast, default), local (whisper.cpp, GPU Metal), "
-    "local-diarize (whisperx, speaker identification). "
-    "Dependencies auto-install on first use. First run may take several minutes.",
+    instructions=(
+        "Transcribe audio/video from local files, YouTube, or URLs. "
+        "Three backends: groq (cloud, fast, default), local (whisper.cpp, GPU Metal), "
+        "local-diarize (whisperx, speaker identification). "
+        "Dependencies auto-install on first use. First run may take several minutes. "
+        "IMPORTANT: When the user asks to transcribe without providing a specific file path or URL, "
+        "ask them to provide the path or URL. If they attached a file, use the file's local path. "
+        "If they mention a file by name, search for it in their working directory or home folder. "
+        "The source parameter accepts: absolute file paths (e.g. /Users/name/audio.mp3), "
+        "YouTube URLs, or remote file URLs."
+    ),
 )
 
 
