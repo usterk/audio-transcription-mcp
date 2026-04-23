@@ -87,11 +87,23 @@ async def transcribe(
     """
     async def log(msg: str):
         if ctx:
-            await ctx.info(msg)
+            try:
+                await ctx.info(msg)
+            except Exception:
+                pass  # Some clients don't support logging notifications
 
     async def progress(step: float, total: float, msg: str = ""):
-        if ctx:
-            await ctx.report_progress(step, total, msg)
+        # Only send progress if client sent a progressToken (checked via meta)
+        # Claude Code doesn't always pass one and sends error on unknown tokens
+        if ctx and getattr(ctx, "request_context", None):
+            meta = getattr(ctx.request_context, "meta", None)
+            if meta and getattr(meta, "progressToken", None) is not None:
+                try:
+                    await ctx.report_progress(step, total, msg)
+                except Exception:
+                    pass
+        # Always also log as info for clients that don't support progress
+        await log(f"[{step}/{total}] {msg}")
 
     if backend not in VALID_BACKENDS:
         return {"error": f"Unknown backend: {backend}. Use: {', '.join(VALID_BACKENDS)}"}
